@@ -24,18 +24,26 @@ public class NegSecFilterTests {
     
 	@Test
     public void test_cleanRequest() {
-        assertTrue(NegSecFilter.cleanRequest("http://host:8080/whoAmI").equals("/whoAmI"));
-        assertTrue(NegSecFilter.cleanRequest("http://host/whoAmI").equals("/whoAmI"));
-        assertTrue(NegSecFilter.cleanRequest("http://host/securityRealm").equals("/securityRealm"));
-        assertTrue(NegSecFilter.cleanRequest("https://host:8080/job/jobName").equals("/job/jobName"));
-        assertTrue(NegSecFilter.cleanRequest("http://host:8080/git/notifyCommit?url=http://gitserver/gitrepo.git").equals("/git/notifyCommit"));
-        assertTrue(NegSecFilter.cleanRequest("/whoAmI").equals("/whoAmI"));
-        assertTrue(NegSecFilter.cleanRequest("/git/notifyCommit?url=http://gitserver/gitrepo.git").equals("/git/notifyCommit"));
+        assertTrue(NegSecFilter.cleanRequest("", "http://host:8080/whoAmI").equals("/whoAmI"));
+        assertTrue(NegSecFilter.cleanRequest("", "http://host/whoAmI").equals("/whoAmI"));
+        assertTrue(NegSecFilter.cleanRequest("", "http://host/securityRealm").equals("/securityRealm"));
+        assertTrue(NegSecFilter.cleanRequest("", "https://host:8080/job/jobName").equals("/job/jobName"));
+        assertTrue(NegSecFilter.cleanRequest("", "http://host:8080/git/notifyCommit?url=http://gitserver/gitrepo.git").equals("/git/notifyCommit"));
+        assertTrue(NegSecFilter.cleanRequest("", "/whoAmI").equals("/whoAmI"));
+        assertTrue(NegSecFilter.cleanRequest("", "/git/notifyCommit?url=http://gitserver/gitrepo.git").equals("/git/notifyCommit"));
+        assertTrue(NegSecFilter.cleanRequest("/jenkins", "http://host:8080/jenkins/whoAmI").equals("/whoAmI"));
+        assertTrue(NegSecFilter.cleanRequest("/jenkins","http://host/jenkins/whoAmI").equals("/whoAmI"));
+        assertTrue(NegSecFilter.cleanRequest("/jenkins","http://host/jenkins/securityRealm").equals("/securityRealm"));
+        assertTrue(NegSecFilter.cleanRequest("/jenkins","https://host:8080/jenkins/job/jobName").equals("/job/jobName"));
+        assertTrue(NegSecFilter.cleanRequest("/jenkins","http://host:8080/jenkins/git/notifyCommit?url=http://gitserver/gitrepo.git").equals("/git/notifyCommit"));
+        assertTrue(NegSecFilter.cleanRequest("/jenkins","/jenkins/whoAmI").equals("/whoAmI"));
+        assertTrue(NegSecFilter.cleanRequest("/jenkins","/jenkins/git/notifyCommit?url=http://gitserver/gitrepo.git").equals("/git/notifyCommit"));
     }
 	
 	@Test
 	public void test_shouldAttemptAuthentication() {
         HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
+        Mockito.when(request.getContextPath()).thenReturn("");
         
 		assertTrue(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/job/SomeJob"));
 		assertTrue(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/job/notifyCommit"));
@@ -49,6 +57,8 @@ public class NegSecFilterTests {
 	public void test_shouldNotAttemptAuthentication() {
         HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
         Mockito.when(request.getParameter("encrypt")).thenReturn("true");
+        Mockito.when(request.getContextPath()).thenReturn("");
+
         
         // ALWAYS_READABLE_PATHS
 		assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/login"));
@@ -65,7 +75,18 @@ public class NegSecFilterTests {
         
         // Unprotected root actions, bundled plugins
 		assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/subversion/notifyCommit"));
-        
+
+        // Static content
+        assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/plugin/extended-choice-parameter/js/jquery.min.js"));
+        assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/plugin/extended-choice-parameter/css/selectize.css"));
+        assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/static/90b250cb/images/headshot.png"));
+        assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/static/eeda8aee/favicon.ico"));
+        assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/static/eeda8aee/images/spinner.gif"));
+
+        //Ajax requests
+        assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/ajaxBuildQueue"));
+        assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/ajaxExecutors"));
+
         // Unprotected root actions, separate plugins - must be installed in the testing jenkins instance to work
 		//assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/git/notifyCommit"));
 		//assertFalse(NegSecFilter.shouldAttemptAuthentication(rule.jenkins, request, "/mercurial/notifyCommit"));

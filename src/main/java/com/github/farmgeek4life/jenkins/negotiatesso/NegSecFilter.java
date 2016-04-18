@@ -48,6 +48,7 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.acegisecurity.context.SecurityContextHolder;
+import org.apache.commons.lang.StringUtils;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
@@ -69,6 +70,12 @@ public final class NegSecFilter extends NegotiateSecurityFilter {
     private String redirect = "yourdomain.com";
     private boolean allowLocalhost = true;
 
+    /**
+     * Extensions that we don't want to execute the filter on.  This isn't necessarily public content - it may be
+     * secured by the active directory plugin.  However, we shouldn't need to execute the SSO process on each page and every
+     * static file on that page.
+     */
+    private static final String[] EXCLUDED_EXTENSIONS = {".css", ".js", ".png", ".ico", ".gif" };
     /**
      * Add call to advertise Jenkins headers, as appropriate.
      * @param request The request - used to check for not authorized paths, check for localhost, redirect, and chain filters
@@ -148,7 +155,10 @@ public final class NegSecFilter extends NegotiateSecurityFilter {
         "/tcpSlaveAgentListener",
         "/federatedLoginService/",
         "/securityRealm",
-        "/userContent" // not added in Jenkins.java, but obviously needed in this case...
+        "/userContent", // not added in Jenkins.java, but obviously needed in this case...
+        //defer to the active directory plugin so filter isn't constantly firing
+        "/ajaxExecutors",
+        "/ajaxBuildQueue"
     );
     
     /**
@@ -157,10 +167,15 @@ public final class NegSecFilter extends NegotiateSecurityFilter {
      * @return the cleaned portion of the URI
      */
     @VisibleForTesting
-    static String cleanRequest(String requestURI) {
+    static String cleanRequest(String contextPath, String requestURI) {
         // if the request URI starts with http, delete everything up to the first '/' following the hostname
         // if the request URI has a query string, delete it.
-        return requestURI.replaceAll("^https?://[^/]+/", "/").replaceAll("\\?.*$", "");
+        String request =  requestURI.replaceAll("^https?://[^/]+/", "/").replaceAll("\\?.*$", "");
+        //remove the context path if there is one
+        if(StringUtils.isNotBlank(contextPath) && !"/".equals(contextPath) && request.startsWith(contextPath)) {
+            request = request.replaceFirst(contextPath, "");
+        }
+        return request;
     }
     
     /**
@@ -183,10 +198,18 @@ public final class NegSecFilter extends NegotiateSecurityFilter {
         // so the user was never automatically authenticated.
         
         // Code copied from Jenkins.getTarget(); need the rest, but not the permission check.
-        String rest = cleanRequest(requestURI); //Stapler.getCurrentRequest().getRestOfPath() in Jenkins.getTarget()
+        HttpServletRequest httpRequest = (HttpServletRequest)request;
+        String context = httpRequest.getContextPath();    	
+        String rest = cleanRequest(context, requestURI); //Stapler.getCurrentRequest().getRestOfPath() in Jenkins.getTarget()
         for (String name : ALWAYS_READABLE_PATHS) {
             if (rest.startsWith(name)) {
                 LOGGER.log(Level.FINER, "NoAuthRequired: Always readable path: " + rest);
+                return false;
+            }
+        }
+        
+        for(String extension: EXCLUDED_EXTENSIONS) {
+            if(rest.endsWith(extension)) {
                 return false;
             }
         }
